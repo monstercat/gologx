@@ -5,7 +5,6 @@ package logx
 type Log struct {
 	BaseError error  // base error object for comparison purposes.
 	Message   string // custom message for this specific error. will otherwise default to the message in BaseError
-	Context   interface{}
 	Severity  string // Severity of the error / log
 }
 

@@ -104,36 +104,18 @@ func (c *LogContext) mapper(forString bool) map[string]interface{} {
 // which should also satisfy the error interface.
 //
 // Therefore, they need to return the *log context* and not the log.
-func (c *LogContext) Add(e error) *LogContext {
+func (c *LogContext) Wrap(e error) *LogContext {
 	c.addLog(e)
 	return c
 }
-func (c *LogContext) AddWithCtx(e *Log, ctx interface{}) *LogContext {
-	e.Context = ctx
-	c.addLog(e)
-	return c
-}
-
 func (c *LogContext) Warn(msg string) *LogContext {
-	return c.Add(NewWarn(msg))
-}
-func (c *LogContext) WarnCtx(msg string, ctx interface{}) *LogContext {
-	return c.AddWithCtx(NewWarn(msg), ctx)
+	return c.Wrap(NewWarn(msg))
 }
 func (c *LogContext) Log(msg string) *LogContext {
-	return c.Add(NewLog(msg))
-}
-func (c *LogContext) LogCtx(msg string, ctx interface{}) *LogContext {
-	return c.AddWithCtx(NewLog(msg), ctx)
+	return c.Wrap(NewLog(msg))
 }
 func (c *LogContext) Fatal(msg string) *LogContext {
-	return c.Add(NewFatal(msg))
-}
-func (c *LogContext) FatalWithCtx(msg string, ctx interface{}) *LogContext {
-	return c.AddWithCtx(NewFatal(msg), ctx)
-}
-func (c *LogContext) Wrap(b *LogContext) *LogContext {
-	return c.Add(b)
+	return c.Wrap(NewFatal(msg))
 }
 func (c *LogContext) addLog(e error) {
 	if c.Logs == nil {
