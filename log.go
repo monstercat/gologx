@@ -1,52 +1,24 @@
 package logx
 
-// Type error is the special error type made by logx.
-// It is an error with a context.
-type Log struct {
-	BaseError error  // base error object for comparison purposes.
-	Message   string // custom message for this specific error. will otherwise default to the message in BaseError
-	Severity  string // Severity of the error / log
+import (
+	"io"
+)
+
+// This is the base log object.
+// It is what will be written to the LogContext
+// by the LogWriters.
+type Log interface {
+	// Returns the message as a byte array.
+	Byte() []byte
+
+	// Sets the message bytes
+	SetMessage([]byte)
 }
 
-func NewLog(msg string) *Log {
-	return newLog(LOG, msg)
-}
-func NewWarn(msg string) *Log {
-	return newLog(WARN, msg)
-}
-func NewFatal(msg string) *Log {
-	return newLog(FATAL, msg)
+// LogWriters are what are input into the default logging
+// system. The application can create its own, however, some
+// loggers are created here by default.
+type LogWriter interface {
+	io.Writer
 }
 
-func newLog(severity, msg string) *Log {
-	return &Log{
-		Severity: severity,
-		Message:  msg,
-	}
-}
-
-func (e *Log) String() string {
-	return e.Error()
-}
-
-func (e *Log) Error() string {
-	if e.Message != "" {
-		return e.Message
-	}
-	return e.BaseError.Error()
-}
-
-// Checks for equality with
-// - object pointer
-// - base error equality
-func (e *Log) Equals(b error) bool {
-	if e == b || e.BaseError == b {
-		return true
-	}
-	if v, ok := b.(*Log); !ok {
-		return false
-	} else if v.BaseError == e.BaseError {
-		return true
-	}
-	return false
-}
