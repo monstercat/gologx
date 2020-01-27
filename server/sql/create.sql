@@ -11,6 +11,7 @@ CREATE TABLE log
 CREATE TABLE route_log
 (
     id       UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    log_id   UUID REFERENCES log (id),
     method   TEXT  NOT NULL,
     severity TEXT,
     path     TEXT  NOT NULL,

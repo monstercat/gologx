@@ -213,7 +213,7 @@ func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 				})
 				return
 			}
-			service, err := s.RegisterHandler(m, connDetails)
+			service, err := s.RegisterService(m, connDetails)
 			if err != nil {
 				sendToClient(conn, logx.ClientMessage{
 					Type:    logx.MsgTypeRegister,
@@ -274,7 +274,7 @@ func DefaultMessageHandler(db *sqlx.DB, msg logx.HostMessage, conn ConnDetails) 
 	}
 }
 
-func (s *Server) RegisterHandler(msg logx.HostMessage, conn ConnDetails) (*Service, error) {
+func (s *Server) RegisterService(msg logx.HostMessage, conn ConnDetails) (*Service, error) {
 	db := s.DB
 
 	service, err := GetServiceByName(db, msg.Service)
@@ -294,6 +294,9 @@ func (s *Server) RegisterHandler(msg logx.HostMessage, conn ConnDetails) (*Servi
 		} else if string(service.SigHash) != string(conn.Hash) {
 			return nil, errors.New("Service registration error. Hash does not match.")
 		}
+		s.SigCacheMutex.Lock()
+		s.SigCache[string(conn.Hash)] = service
+		s.SigCacheMutex.Unlock()
 		return service, nil
 	}
 

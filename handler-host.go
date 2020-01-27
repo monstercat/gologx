@@ -21,8 +21,6 @@ const MsgTypeAuthorization = "Authorization"
 // (e.g., host panic or signal interruption)
 // a Flush() command is provided to flush that data
 // directly to the server.
-//
-// This specific host handler will store the
 type DbHostHandler struct {
 	// This is the endpoint of the host to which
 	// this logger is connected.
@@ -48,6 +46,8 @@ type DbHostHandler struct {
 	HeartBeatDuration time.Duration
 
 	// Database to which the logs are stored temporarily
+	// TODO: database to store temporarily should be changed
+	// to something that is more generic.
 	DB *sqlx.DB
 
 	// Table name for the logs in said database.
