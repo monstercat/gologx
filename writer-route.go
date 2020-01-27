@@ -2,10 +2,11 @@ package logx
 
 import (
 	"log"
+	"net/http"
 	"time"
-
-	"github.com/gin-gonic/gin"
 )
+
+const RouteHostLogType = "RouteHostLog"
 
 // RouteWriter is used to write messages related to a route.
 type RouteWriter struct {
@@ -38,7 +39,10 @@ func (l RouteHostLog) Context() interface{} {
 func (w *RouteWriter) Write(byt []byte) (int, error) {
 	log := RouteHostLog{
 		BaseHostLog: BaseHostLog{
-			Time:    time.Now(),
+			Time: time.Now(),
+
+			// Used for storing data in special tables in the backend.
+			Type: RouteHostLogType,
 		},
 		RouteContext: w.RouteContext,
 	}
@@ -46,11 +50,11 @@ func (w *RouteWriter) Write(byt []byte) (int, error) {
 	return w.ctx.Run(log)
 }
 
-// Creates a logger with values from GIN. The intended use is like:
-//
+// Creates a logger with values from http Request. The intended use is like
+// the following in the case of GIN:
 // ...
 //    r.GET("...", func(c *gin.Context) {
-//        routeHandler(c, NewGinRouteLogger(c, ctx))
+//        routeHandler(c, NewGinRouteLogger(c.Request, ctx))
 //    }
 // ...
 //
@@ -59,21 +63,23 @@ func (w *RouteWriter) Write(byt []byte) (int, error) {
 //   ...
 // }
 //
-func NewGinRouteLogger(c *gin.Context, ctx *LogHandler) *log.Logger {
+func NewRouteLogger(r *http.Request, ctx *LogHandler) *log.Logger {
 	var b []byte
-	body, err := c.Request.GetBody()
+	body, err := r.GetBody()
 	if err == nil {
 		_, _ = body.Read(b)
 	}
+
 	w := &RouteWriter{
 		ctx: ctx,
 		RouteContext: RouteContext{
-			Method:  c.Request.Method,
-			Path:    c.Request.URL.Path,
-			IP:      c.ClientIP(),
+			Method:  r.Method,
+			Path:    r.URL.Path,
+			IP:      r.RemoteAddr,
 			Body:    b,
-			Headers: c.Request.Header,
+			Headers: r.Header,
 		},
 	}
 	return log.New(w, "", 0)
 }
+
