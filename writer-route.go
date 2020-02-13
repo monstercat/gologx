@@ -54,7 +54,7 @@ func (w *RouteWriter) Write(byt []byte) (int, error) {
 // the following in the case of GIN:
 // ...
 //    r.GET("...", func(c *gin.Context) {
-//        routeHandler(c, NewGinRouteLogger(c.Request, ctx))
+//        routeHandler(c, NewRouteLogger(c.Request, ctx))
 //    }
 // ...
 //
