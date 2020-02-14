@@ -1,11 +1,9 @@
 package server
 
 import (
-	"database/sql"
 	"time"
 
 	"github.com/Masterminds/squirrel"
-	"github.com/cyc-ttn/pos"
 	"github.com/jmoiron/sqlx"
 
 	dbutil "github.com/monstercat/golib/db"
@@ -18,6 +16,10 @@ type Service struct {
 	LastSeen time.Time `db:"last_seen"`
 	SigHash  []byte    `db:"sig_hash"`
 }
+
+var (
+	ColsService = dbutil.GetColumnsList(&Service{}, "")
+)
 
 func (s *Service) Insert(tx *sqlx.Tx) error {
 	return psql.Insert(TableService).
@@ -60,7 +62,7 @@ func (s *Service) UpdateLastSeen(db sqlx.Ext) error {
 
 func GetService(db sqlx.Queryer, where interface{}) (*Service, error) {
 	var s Service
-	if err := pos.GetForStruct(db, &s, TableService, where); err != nil && err != sql.ErrNoRows {
+	if err := dbutil.Get(db, &s, psql.Select(ColsService...).From(TableService).Where(where)); err != nil {
 		return nil, err
 	}
 	return &s, nil

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -58,7 +59,7 @@ func (d *ConnDetails) WriteUnauthorized() {
 	d.WrCh <- logx.ClientMessage{
 		Type:    logx.MsgTypeAuthorization,
 		Status:  logx.ClientMessageStatusFailed,
-		Message: []byte("Unauthorized"),
+		Message: "Unauthorized",
 	}
 }
 
@@ -142,6 +143,10 @@ func (s *Server) VerifySignature(sig []byte) (*Service, error) {
 	return service, nil
 }
 
+func (s *Server) marshalHash(sig []byte) []byte {
+	return []byte(base64.StdEncoding.EncodeToString(sig))
+}
+
 // Handles the connection from the server.
 func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 	defer conn.Close()
@@ -163,7 +168,7 @@ func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 	wrCh := make(chan logx.ClientMessage)
 
 	done := make(chan bool)
-	defer func(){
+	defer func() {
 		done <- true
 	}()
 	go func() {
@@ -188,7 +193,10 @@ func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 		eh(errors.New("tls connection required"))
 		return
 	}
-	connDetails.Hash = tlsConn.ConnectionState().PeerCertificates[0].Signature
+
+	// Binary signature is not storagble in UTF-8. Therefore, we need to marshal
+	// in a way that it can be represented.
+	connDetails.Hash = s.marshalHash(tlsConn.ConnectionState().PeerCertificates[0].Signature)
 
 	service, err := s.VerifySignature(connDetails.Hash)
 	if err != sql.ErrNoRows && err != nil {
@@ -213,9 +221,9 @@ func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 			eh(err)
 			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
 				sendToClient(conn, logx.ClientMessage{
-					Type: logx.MsgTypeDecode,
-					Status: logx.ClientMessageStatusFailed,
-					Message: []byte("Timeout"),
+					Type:    logx.MsgTypeDecode,
+					Status:  logx.ClientMessageStatusFailed,
+					Message: "Timeout",
 				})
 				return
 			}
@@ -223,9 +231,9 @@ func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 				return
 			}
 			sendToClient(conn, logx.ClientMessage{
-				Type: logx.MsgTypeDecode,
-				Status: logx.ClientMessageStatusFailed,
-				Message: []byte("400: Could not decode message. " + err.Error()),
+				Type:    logx.MsgTypeDecode,
+				Status:  logx.ClientMessageStatusFailed,
+				Message: "400: Could not decode message. " + err.Error(),
 			})
 			return
 		}
@@ -237,7 +245,7 @@ func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 				sendToClient(conn, logx.ClientMessage{
 					Type:    logx.MsgTypeRegister,
 					Status:  logx.ClientMessageStatusFailed,
-					Message: []byte("Password doesn't match"),
+					Message: "Password doesn't match",
 				})
 				return
 			}
@@ -246,7 +254,7 @@ func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 				sendToClient(conn, logx.ClientMessage{
 					Type:    logx.MsgTypeRegister,
 					Status:  logx.ClientMessageStatusFailed,
-					Message: []byte("Could not register service: " + err.Error()),
+					Message: "Could not register service: " + err.Error(),
 				})
 			} else {
 				connDetails.Service = service
@@ -300,6 +308,18 @@ func DefaultMessageHandler(db *sqlx.DB, msg logx.HostMessage, conn ConnDetails) 
 	}
 	err := InsertHostMessage(db, msg, conn.Service.Id)
 	if err != nil {
+		conn.WrCh <- logx.ClientMessage{
+			Type:    msg.Type,
+			Status:  logx.ClientMessageStatusFailed,
+			Id:      msg.Id,
+			Message: "Failed to store messaage: " + err.Error(),
+		}
+		return
+	}
+	conn.WrCh <- logx.ClientMessage{
+		Type:   msg.Type,
+		Status: logx.ClientMessageStatusSuccessful,
+		Id:     msg.Id,
 	}
 }
 
@@ -372,7 +392,7 @@ func HeartbeatHandler(db *sqlx.DB, msg logx.HostMessage, conn ConnDetails) {
 		conn.WrCh <- logx.ClientMessage{
 			Type:    logx.MsgTypeHeartbeat,
 			Status:  logx.ClientMessageStatusFailed,
-			Message: []byte("Could not update heartbeat. " + err.Error()),
+			Message: "Could not update heartbeat. " + err.Error(),
 		}
 	}
 }

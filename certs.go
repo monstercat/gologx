@@ -25,18 +25,20 @@ func GenerateCerts(validFor time.Duration) (*x509.Certificate, *rsa.PrivateKey, 
 		return nil, nil, err
 	}
 
+	now := time.Now()
+
 	template := &x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
 			Organization: []string{"Monstercat Inc."},
 		},
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(validFor),
+		NotBefore:             now,
+		NotAfter:              now.Add(validFor),
 		KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
 	}
 
-	derBytes, err := x509.CreateCertificate(rand.Reader, template, template, key.PublicKey, key)
+	derBytes, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
 		return nil, nil, err
 	}

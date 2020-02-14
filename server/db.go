@@ -12,7 +12,6 @@ const (
 	TableService = "service"
 )
 
-
 var (
 	ErrInvalidId = errors.New("invalid id")
 )

@@ -1,20 +1,21 @@
-package logx
+package routelogx
 
 import (
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/monstercat/logx"
 )
 
-const RouteHostLogType = "RouteHostLog"
+const HostLogType = "RouteHostLog"
 
-// RouteWriter is used to write messages related to a route.
-type RouteWriter struct {
-	ctx *LogHandler
-	RouteContext
+type Writer struct {
+	ctx *logx.LogHandler
+	Context
 }
 
-type RouteContext struct {
+type Context struct {
 	Method  string
 	Path    string
 	IP      string
@@ -22,13 +23,13 @@ type RouteContext struct {
 	Headers interface{}
 }
 
-type RouteHostLog struct {
-	RouteContext
-	BaseHostLog
+type HostLog struct {
+	ctx Context
+	logx.BaseHostLog
 }
 
-func (l RouteHostLog) Context() interface{} {
-	return l.RouteContext
+func (l HostLog) Context() interface{} {
+	return l.ctx
 }
 
 // To follow the io.Writer interface, which is required for
@@ -36,15 +37,15 @@ func (l RouteHostLog) Context() interface{} {
 //
 // This will create a specialized RouteLog which will be
 // sent to the LogContext's handlers.
-func (w *RouteWriter) Write(byt []byte) (int, error) {
-	log := RouteHostLog{
-		BaseHostLog: BaseHostLog{
+func (w *Writer) Write(byt []byte) (int, error) {
+	log := HostLog{
+		BaseHostLog: logx.BaseHostLog{
 			Time: time.Now(),
 
 			// Used for storing data in special tables in the backend.
-			Type: RouteHostLogType,
+			Type: HostLogType,
 		},
-		RouteContext: w.RouteContext,
+		ctx: w.Context,
 	}
 	log.SetMessage(byt)
 	return w.ctx.Run(log)
@@ -54,7 +55,7 @@ func (w *RouteWriter) Write(byt []byte) (int, error) {
 // the following in the case of GIN:
 // ...
 //    r.GET("...", func(c *gin.Context) {
-//        routeHandler(c, NewRouteLogger(c.Request, ctx))
+//        routeHandler(c, NewLogger(c.Request, ctx))
 //    }
 // ...
 //
@@ -62,17 +63,16 @@ func (w *RouteWriter) Write(byt []byte) (int, error) {
 //   // no changes to the use of log from before.
 //   ...
 // }
-//
-func NewRouteLogger(r *http.Request, ctx *LogHandler) *log.Logger {
+func NewLogger(r *http.Request, ctx *logx.LogHandler) *log.Logger {
 	var b []byte
 	body, err := r.GetBody()
 	if err == nil {
 		_, _ = body.Read(b)
 	}
 
-	w := &RouteWriter{
+	w := &Writer{
 		ctx: ctx,
-		RouteContext: RouteContext{
+		Context: Context{
 			Method:  r.Method,
 			Path:    r.URL.Path,
 			IP:      r.RemoteAddr,
@@ -82,4 +82,3 @@ func NewRouteLogger(r *http.Request, ctx *LogHandler) *log.Logger {
 	}
 	return log.New(w, "", 0)
 }
-

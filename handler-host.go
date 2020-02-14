@@ -5,6 +5,8 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"sync"
 	"time"
 )
 
@@ -59,6 +61,11 @@ type HostHandler struct {
 	// will attempt to read this directory for any existing files and
 	// send them to the host.
 	CacheFileLocation string
+
+	// List of filenames/Ids that are currently being sent to the server,
+	// so they do not get sent again.
+	currentlySending   []string
+	currentlySendingMu sync.RWMutex
 }
 
 // Host Message is messages that are sent to the host.
@@ -78,7 +85,8 @@ type HostMessage struct {
 type ClientMessage struct {
 	Type    string
 	Status  ClientMessageStatus
-	Message []byte
+	Message string `json:"omitempty"`
+	Id      string `json:"omitempty"`
 }
 
 type ClientMessageStatus string
@@ -229,7 +237,14 @@ func (h HostHandler) ReadResponses(conn *tls.Conn, errCh chan error) {
 			errCh <- err
 		}
 
-		// TODO: handle the client message!
+		if m.Status == ClientMessageStatusFailed {
+			errCh <- errors.New(m.Message)
+			continue
+		}
+
+		// TODO: if succcessful, we need to clear that log
+		//  from memory, so that it doesn't get sent again.
+
 	}
 }
 
@@ -263,15 +278,19 @@ func (h HostHandler) Register() error {
 		return err
 	}
 
-	// Read response.
+	// Read response and handle any errors.
 	dec := json.NewDecoder(conn)
 	var m ClientMessage
 	if err := dec.Decode(&m); err != nil {
 		return err
 	}
 
-	// TODO: read the client message properly.
-
+	if m.Type != MsgTypeRegister {
+		return errors.New(fmt.Sprintf("Registration error: Invalid response type from server. Expect %s got %s", MsgTypeRegister, m.Type))
+	}
+	if m.Status == ClientMessageStatusFailed {
+		return errors.New("Registration error: " + m.Message)
+	}
 	return nil
 }
 

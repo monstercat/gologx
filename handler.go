@@ -2,7 +2,9 @@ package logx
 
 import "os"
 
-// Handlers handle incoming logs.
+// Handlers are different ways to handle incoming logs.
+// For example, the handler provided below simply writes
+// the log to STDOUT.
 type Handler interface {
 	Handle(Log) (int, error)
 }

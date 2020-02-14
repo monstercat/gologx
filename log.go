@@ -22,3 +22,23 @@ type LogWriter interface {
 	io.Writer
 }
 
+type StdLog struct {
+	Message []byte
+}
+func (l *StdLog) SetMessage(b []byte){
+	l.Message = b
+}
+func (l *StdLog) Byte() []byte {
+	return l.Message
+}
+
+type StdLogWriter struct {
+	ctx *LogHandler
+}
+
+func (w *StdLogWriter) Write(byt []byte) (int, error) {
+	log := &StdLog{
+		Message: byt,
+	}
+	return w.ctx.Run(log)
+}
