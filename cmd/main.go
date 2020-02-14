@@ -13,7 +13,7 @@ import (
 	cmd "github.com/tmathews/commander"
 
 	"github.com/monstercat/logx"
-	"github.com/monstercat/logx/server"
+	"github.com/monstercat/logx/logxhost"
 )
 
 // Basic command to run the server.
@@ -52,7 +52,7 @@ func getPostgresConnection(url string) (*sqlx.DB, error) {
 
 // Starts the host logging server.
 func cmdServer(name string, args []string) error {
-	s := &server.Server{}
+	s := &logxhost.Server{}
 	var port int
 	var postgres string
 

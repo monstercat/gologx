@@ -24,12 +24,12 @@ type Context struct {
 }
 
 type HostLog struct {
-	ctx Context
+	Ctx Context
 	logx.BaseHostLog
 }
 
 func (l HostLog) Context() interface{} {
-	return l.ctx
+	return l.Ctx
 }
 
 // To follow the io.Writer interface, which is required for
@@ -45,7 +45,7 @@ func (w *Writer) Write(byt []byte) (int, error) {
 			// Used for storing data in special tables in the backend.
 			Type: HostLogType,
 		},
-		ctx: w.Context,
+		Ctx: w.Context,
 	}
 	log.SetMessage(byt)
 	return w.ctx.Run(log)

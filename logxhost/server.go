@@ -1,4 +1,4 @@
-package server
+package logxhost
 
 import (
 	"crypto/rand"
@@ -69,7 +69,7 @@ func (s *Server) Listen(port int) (net.Listener, error) {
 		return nil, err
 	}
 	tlsConf := &tls.Config{
-		ClientAuth:         tls.RequireAndVerifyClientCert,
+		ClientAuth:         tls.RequireAnyClientCert,
 		Certificates:       []tls.Certificate{cert},
 		InsecureSkipVerify: true,
 		Rand:               rand.Reader,
@@ -102,7 +102,9 @@ func (s *Server) Serve(listener net.Listener, eh func(error)) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			eh(err)
+			if err != io.EOF {
+				eh(err)
+			}
 
 			// If a temporary error, then try to delay and restart.
 			// This uses exponential backoff.
@@ -218,6 +220,9 @@ func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 		//TODO: log all incoming message errors somewhere including the service details
 		// ONLY if the service is available.
 		if err := dec.Decode(&m); err != nil {
+			if err == io.EOF {
+				return
+			}
 			eh(err)
 			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
 				sendToClient(conn, logx.ClientMessage{
@@ -225,9 +230,6 @@ func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 					Status:  logx.ClientMessageStatusFailed,
 					Message: "Timeout",
 				})
-				return
-			}
-			if err == io.EOF {
 				return
 			}
 			sendToClient(conn, logx.ClientMessage{

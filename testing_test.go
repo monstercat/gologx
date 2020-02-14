@@ -1,12 +1,16 @@
-package server
+package logx
 
 import (
 	"os"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
+
+	"github.com/monstercat/logx/logxhost"
 )
+
 
 func getPostgresConnection(url string) (*sqlx.DB, error) {
 	connStr, err := pq.ParseURL(url)

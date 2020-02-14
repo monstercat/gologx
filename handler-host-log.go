@@ -7,6 +7,7 @@ import "time"
 type HostLog interface {
 	Context() interface{}
 	HostLog() BaseHostLog
+	Log
 }
 
 type BaseHostLog struct {

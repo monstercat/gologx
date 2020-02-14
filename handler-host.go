@@ -2,11 +2,12 @@ package logx
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -90,8 +91,8 @@ type HostMessage struct {
 type ClientMessage struct {
 	Type    string
 	Status  ClientMessageStatus
-	Message string `json:"omitempty"`
-	Id      string `json:"omitempty"`
+	Message string `json:"Message,omitempty"`
+	Id      string `json:"Id,omitempty"`
 }
 
 type ClientMessageStatus string
@@ -123,6 +124,31 @@ func (h HostHandler) Handle(l Log) (int, error) {
 	return len(b.context), nil
 }
 
+func (h *HostHandler) StartDb() (err error) {
+	if h.db != nil {
+		return nil
+	}
+	h.db, err = sql.Open("sqlite3", h.CacheFileLocation)
+	if err != nil {
+		return
+	}
+
+	// Create the table, if it hasn't been created already.
+	_, err = h.db.Exec(`
+CREATE TABLE IF NOT EXISTS log (
+    id INTEGER PRIMARY KEY,
+    log_type TEXT,
+    log_time DATE,
+    message TEXT,
+    context BLOB
+);
+`)
+	if err != nil {
+		return
+	}
+	return nil
+}
+
 func (h *HostHandler) Store(l HostLog) error {
 	b := l.HostLog()
 	c := l.Context()
@@ -132,11 +158,18 @@ func (h *HostHandler) Store(l HostLog) error {
 		return err
 	}
 
+	if err := h.StartDb(); err != nil {
+		return err
+	}
+
 	_, err = h.db.Exec(`
 INSERT INTO log(log_type, log_time, message, context)
 VALUES (?, ?, ?, ?)
 `, b.Type, b.Time, b.Message, byt)
-	return err
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // Run will run the host handler. As it contains
@@ -182,11 +215,17 @@ func (h HostHandler) Run(errCh chan error) {
 //
 // It does this by reading the CacheFileLocation for any files containing
 // a log or logs.
-func (h HostHandler) SendLogs(wrCh chan HostMessage, errCh chan error) {
+func (h *HostHandler) SendLogs(wrCh chan HostMessage, errCh chan error) {
 	for {
 		select {
 		case <-time.After(h.WaitDuration):
-			rows, err := h.db.Query("SELECT id, log_type, log_time, message, context FROM log")
+			h.currentlySendingMu.RLock()
+			sending := h.currentlySending
+			h.currentlySendingMu.RUnlock()
+
+			sendingStr := "\"" + strings.Join(sending, "\",\"") + "\""
+
+			rows, err := h.db.Query("SELECT id, log_type, log_time, message, context FROM log WHERE id NOT IN (?)", sendingStr)
 			if err != nil {
 				errCh <- err
 				continue
@@ -197,6 +236,10 @@ func (h HostHandler) SendLogs(wrCh chan HostMessage, errCh chan error) {
 					errCh <- err
 					continue
 				}
+				h.currentlySendingMu.Lock()
+				h.currentlySending = append(h.currentlySending, l.id)
+				h.currentlySendingMu.Unlock()
+
 				wrCh <- HostMessage{
 					Id:      l.id,
 					Type:    l.Type,
@@ -225,7 +268,7 @@ func (h *HostHandler) Startup() error {
 	h.pair, err = tls.LoadX509KeyPair(h.CertFile, h.KeyFile)
 
 	// If it has expired, or is invalid, then create new ones as well!
-	if err != nil || h.pair.Leaf.NotAfter.Before(time.Now()) {
+	if err != nil || h.pair.Leaf == nil || h.pair.Leaf.NotAfter.Before(time.Now()) {
 		cert, key, err := GenerateCerts(time.Hour * 24 * 365)
 		if err != nil {
 			return err
@@ -237,34 +280,16 @@ func (h *HostHandler) Startup() error {
 			return err
 		}
 
-		// This should not error! because we just created it.
-		privBytes, err := x509.MarshalPKCS8PrivateKey(key)
-		if err != nil {
-			return err
-		}
-		h.pair, err = tls.X509KeyPair(cert.Raw, privBytes)
+		//We cannot load directly, because the X509KeyPair function
+		//requires PEM data.
+		h.pair, err = tls.LoadX509KeyPair(h.CertFile, h.KeyFile)
 		if err != nil {
 			return err
 		}
 	}
 
 	// Before registration, start the sql lite database.
-	h.db, err = sql.Open("sqlite3", h.CacheFileLocation)
-	if err != nil {
-		return err
-	}
-
-	// Create the table, if it hasn't been created already.
-	_, err = h.db.Exec(`
-CREATE TABLE IF NOT EXISTS log (
-    id INTEGER PRIMARY KEY,
-    log_type TEXT,
-    log_time DATE,
-    message TEXT,
-    context BLOB
-);
-`)
-	if err != nil {
+	if err := h.StartDb(); err != nil {
 		return err
 	}
 
@@ -279,8 +304,23 @@ func (h HostHandler) ReadResponses(conn *tls.Conn, errCh chan error) {
 	for {
 		var m ClientMessage
 		if err := dec.Decode(&m); err != nil {
+			if err == io.EOF {
+				// TODO: restart connection!
+				return
+			}
 			errCh <- err
 		}
+
+		// Remove from "sending"
+		h.currentlySendingMu.Lock()
+		for idx, id := range h.currentlySending {
+			if id == m.Id {
+				h.currentlySending[idx] = h.currentlySending[0]
+				h.currentlySending = h.currentlySending[1:]
+				break
+			}
+		}
+		h.currentlySendingMu.Unlock()
 
 		if m.Status == ClientMessageStatusFailed {
 			errCh <- errors.New(m.Message)
@@ -348,7 +388,7 @@ func (h HostHandler) Register() error {
 
 // A heartbeat is a signal that is sent to the host to tell the host
 // that the client process is still alive.
-func (h HostHandler) RunHeartbeat(wrCh chan HostMessage) {
+func (h *HostHandler) RunHeartbeat(wrCh chan HostMessage) {
 	for {
 		select {
 		case <-time.After(h.HeartBeatDuration):
