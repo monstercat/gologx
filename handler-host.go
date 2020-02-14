@@ -172,6 +172,30 @@ VALUES (?, ?, ?, ?)
 	return nil
 }
 
+func (h HostHandler) RunForever(errCh chan error) {
+	if err := h.Startup(); err != nil {
+		errCh <- err
+		return
+	}
+
+	currDelay := 5 * time.Millisecond
+	now := time.Now()
+	for {
+		// Continually restart!
+		h.run(errCh)
+
+		if time.Now().Sub(now).Seconds() < 10 {
+			time.Sleep(currDelay)
+			currDelay *= 2
+			if currDelay > time.Second {
+				currDelay = time.Second
+			}
+		}else{
+			currDelay = 5 * time.Millisecond
+		}
+	}
+}
+
 // Run will run the host handler. As it contains
 // an infinite loop, it should be called in a
 // go routine.
@@ -179,11 +203,15 @@ VALUES (?, ?, ?, ?)
 // This function will call startup as well, so
 // calling startup is not necessary.
 func (h HostHandler) Run(errCh chan error) {
-
 	if err := h.Startup(); err != nil {
 		errCh <- err
 		return
 	}
+
+	h.run(errCh)
+}
+
+func (h HostHandler) run(errCh chan error) {
 
 	conn, err := h.connect()
 	if err != nil {
@@ -204,7 +232,10 @@ func (h HostHandler) Run(errCh chan error) {
 		case msg := <-wrCh:
 			if err := h.sendToHost(conn, msg); err != nil {
 				errCh <- err
-				// TODO: make the connection restart
+
+				// If the function returns, the wrapping function should
+				// know to restart!
+				return
 			}
 		}
 	}

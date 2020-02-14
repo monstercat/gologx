@@ -88,7 +88,7 @@ func TestHostHandler(t *testing.T) {
 			Endpoint:          ":9090",
 			Password:          test.Password,
 		}
-		files = append(files, client.CertFile, client.KeyFile)
+		files = append(files, client.CertFile, client.KeyFile, client.CacheFileLocation)
 
 		// If the password is invalid, err channel should get an error!
 		// and we should go to the next thing!
