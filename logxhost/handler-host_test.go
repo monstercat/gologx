@@ -68,9 +68,9 @@ func TestHostHandler(t *testing.T) {
 		server.DB.Exec(`DELETE FROM service WHERE id = ANY(?)`, pq.StringArray(serviceIds))
 	}()
 
-	var files []string
+	var filesToCleanup []string
 	defer func() {
-		for _, f := range files {
+		for _, f := range filesToCleanup {
 			os.Remove(f)
 		}
 	}()
@@ -88,7 +88,7 @@ func TestHostHandler(t *testing.T) {
 			Endpoint:          ":9090",
 			Password:          test.Password,
 		}
-		files = append(files, client.CertFile, client.KeyFile, client.CacheFileLocation)
+		filesToCleanup = append(filesToCleanup, client.CertFile, client.KeyFile, client.CacheFileLocation)
 
 		// If the password is invalid, err channel should get an error!
 		// and we should go to the next thing!

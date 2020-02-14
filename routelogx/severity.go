@@ -3,6 +3,7 @@ package routelogx
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/monstercat/logx"
@@ -14,7 +15,6 @@ type Severity string
 
 const (
 	SeverityInfo  Severity = "INFO"
-	SeverityWarn  Severity = "WARN"
 	SeverityFatal Severity = "FATAL"
 )
 
@@ -59,7 +59,7 @@ func (w *Logger) Write(byt []byte) (int, error) {
 }
 
 func (w *Logger) Print(v ...interface{}) {
-	w.Info(v...)
+	w.log(SeverityInfo, []byte(fmt.Sprint(v...)))
 }
 
 func (w *Logger) Println(v ...interface{}) {
@@ -67,31 +67,29 @@ func (w *Logger) Println(v ...interface{}) {
 }
 
 func (w *Logger) Printf(format string, v ...interface{}) {
-	w.Infof(format, v...)
-}
-
-func (w *Logger) Info(v ...interface{}) {
-	w.log(SeverityInfo, []byte(fmt.Sprint(v...)))
-}
-
-func (w *Logger) Infof(format string, v ...interface{}) {
 	w.log(SeverityInfo, []byte(fmt.Sprintf(format, v...)))
-}
-
-func (w *Logger) Warn(v ...interface{}) {
-	w.log(SeverityWarn, []byte(fmt.Sprint(v...)))
-}
-
-func (w *Logger) Warnf(format string, v ...interface{}) {
-	w.log(SeverityWarn, []byte(fmt.Sprintf(format, v...)))
 }
 
 func (w *Logger) Fatal(v ...interface{}) {
 	w.log(SeverityFatal, []byte(fmt.Sprint(v...)))
+	os.Exit(1)
 }
 
 func (w *Logger) Fatalf(format string, v ...interface{}) {
 	w.log(SeverityFatal, []byte(fmt.Sprintf(format, v...)))
+	os.Exit(1)
+}
+
+func (w *Logger) Panic(v ...interface{}) {
+	s := fmt.Sprint(v...)
+	w.log(SeverityFatal, []byte(s))
+	panic(s)
+}
+
+func (w *Logger) Panicf(format string, v ...interface{}) {
+	s := fmt.Sprintf(format, v...)
+	w.log(SeverityFatal, []byte(s))
+	panic(s)
 }
 
 // Creates a logger that mimics the log.Print functions as well as
