@@ -3,11 +3,14 @@ package logx
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 const (
@@ -37,7 +40,8 @@ type HostHandler struct {
 	// Certificate
 	CertFile, KeyFile string
 
-	// Certificate pair
+	// Certificate pair for caching purposes
+	// after loading from the CertFile and KeyFile.
 	pair tls.Certificate
 
 	// Origin machine - the name of the current machine
@@ -61,6 +65,7 @@ type HostHandler struct {
 	// will attempt to read this directory for any existing files and
 	// send them to the host.
 	CacheFileLocation string
+	db *sql.DB
 
 	// List of filenames/Ids that are currently being sent to the server,
 	// so they do not get sent again.
@@ -104,7 +109,9 @@ func (h HostHandler) Handle(l Log) (int, error) {
 		return 0, nil
 	}
 
-	// TODO: store in the cache file location
+	if err := h.Store(hostLog); err != nil {
+		return 0, err
+	}
 
 	byt, err := json.Marshal(hostLog.Context())
 	if err != nil {
@@ -114,6 +121,22 @@ func (h HostHandler) Handle(l Log) (int, error) {
 	b.context = byt
 
 	return len(b.context), nil
+}
+
+func (h *HostHandler) Store(l HostLog) error {
+	b := l.HostLog()
+	c := l.Context()
+
+	byt, err := json.Marshal(c)
+	if err != nil {
+		return err
+	}
+
+	_, err = h.db.Exec(`
+INSERT INTO log(log_type, log_time, message, context)
+VALUES (?, ?, ?, ?)
+`, b.Type, b.Time, b.Message, byt)
+	return err
 }
 
 // Run will run the host handler. As it contains
@@ -148,7 +171,7 @@ func (h HostHandler) Run(errCh chan error) {
 		case msg := <-wrCh:
 			if err := h.sendToHost(conn, msg); err != nil {
 				errCh <- err
-				//TODO: make the connection restart
+				// TODO: make the connection restart
 			}
 		}
 	}
@@ -163,14 +186,17 @@ func (h HostHandler) SendLogs(wrCh chan HostMessage, errCh chan error) {
 	for {
 		select {
 		case <-time.After(h.WaitDuration):
-			var ls []BaseHostLog
-
-			// Go through the folder to see if there is anything to send.
-			// Try to send everything.
-
-			for _, l := range ls {
-				// After registration, Host Message doesn't need the
-				// origin and service anymore.
+			rows, err := h.db.Query("SELECT id, log_type, log_time, message, context FROM log")
+			if err != nil {
+				errCh <- err
+				continue
+			}
+			for rows.Next() {
+				var l BaseHostLog
+				if err := rows.Scan(&l.id, &l.Type, &l.Time, &l.Message, &l.context); err != nil {
+					errCh <- err
+					continue
+				}
 				wrCh <- HostMessage{
 					Id:      l.id,
 					Type:    l.Type,
@@ -179,7 +205,6 @@ func (h HostHandler) SendLogs(wrCh chan HostMessage, errCh chan error) {
 					Context: l.context,
 				}
 			}
-
 		}
 	}
 }
@@ -189,7 +214,7 @@ func (h HostHandler) SendLogs(wrCh chan HostMessage, errCh chan error) {
 // will try to generate the cert and the key.
 //
 // Then, it will register itself with the host.
-func (h HostHandler) Startup() error {
+func (h *HostHandler) Startup() error {
 	if h.CertFile == "" || h.KeyFile == "" {
 		return ErrCertRequired
 	}
@@ -223,6 +248,26 @@ func (h HostHandler) Startup() error {
 		}
 	}
 
+	// Before registration, start the sql lite database.
+	h.db, err = sql.Open("sqlite3", h.CacheFileLocation)
+	if err != nil {
+		return err
+	}
+
+	// Create the table, if it hasn't been created already.
+	_, err = h.db.Exec(`
+CREATE TABLE IF NOT EXISTS log (
+    id INTEGER PRIMARY KEY,
+    log_type TEXT,
+    log_time DATE,
+    message TEXT,
+    context BLOB
+);
+`)
+	if err != nil {
+		return err
+	}
+
 	return h.Register()
 }
 
@@ -242,10 +287,17 @@ func (h HostHandler) ReadResponses(conn *tls.Conn, errCh chan error) {
 			continue
 		}
 
-		// TODO: if succcessful, we need to clear that log
-		//  from memory, so that it doesn't get sent again.
-
+		if err := h.Remove(m.Id); err != nil {
+			errCh <- err
+		}
 	}
+}
+
+func (h HostHandler) Remove(id string) error {
+	_, err := h.db.Exec(`
+DELETE FROM log WHERE id = ? 
+`, id)
+	return err
 }
 
 // Registration with the host involves sending the origin and the
