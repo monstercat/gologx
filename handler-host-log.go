@@ -2,7 +2,7 @@ package logx
 
 import "time"
 
-// Logs being sent to DbHostHandler must follow
+// Logs being sent to HostHandler must follow
 // this interface Otherwise, they will be ignored.
 type HostLog interface {
 	Context() interface{}

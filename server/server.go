@@ -3,6 +3,7 @@ package server
 import (
 	"crypto/rand"
 	"crypto/tls"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -13,11 +14,11 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
+	dbutil "github.com/monstercat/golib/db"
 	"github.com/monstercat/logx"
 )
 
-type Handler func(db *sqlx.DB, message logx.HostMessage, details ConnDetails)
-
+// Host Server which stores the incoming logs in a central database
 type Server struct {
 	CertFile string
 	KeyFile  string
@@ -25,8 +26,6 @@ type Server struct {
 	Password string // Master password to register
 
 	DB *sqlx.DB
-
-	Handlers map[string]Handler
 
 	SigCache      map[string]*Service
 	SigCacheMutex sync.RWMutex
@@ -77,6 +76,7 @@ func (s *Server) Listen(port int) (net.Listener, error) {
 	return tls.Listen("tcp", ":"+strconv.Itoa(port), tlsConf)
 }
 
+// Exponential backoff (2^x) until duration of 1 second.
 func getNextDelay(t time.Duration) time.Duration {
 	if t == 0 {
 		return 5 * time.Millisecond
@@ -103,7 +103,8 @@ func (s *Server) Serve(listener net.Listener, eh func(error)) {
 		if err != nil {
 			eh(err)
 
-			// If a temporary error, the ntry delay.
+			// If a temporary error, then try to delay and restart.
+			// This uses exponential backoff.
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
 				tempDelay = getNextDelay(tempDelay)
 				time.Sleep(tempDelay)
@@ -117,10 +118,13 @@ func (s *Server) Serve(listener net.Listener, eh func(error)) {
 	}
 }
 
+// This function verifies the signature of the incoming connection.
+// It will return the service that corresponds to the signature,
+// if any.
+//
+// This should be called after Serve() is called, as the
+// signature cache needs to be initiated.
 func (s *Server) VerifySignature(sig []byte) (*Service, error) {
-	if s.SigCache == nil {
-		return nil, nil
-	}
 	s.SigCacheMutex.RLock()
 	service, ok := s.SigCache[string(sig)]
 	s.SigCacheMutex.RUnlock()
@@ -138,6 +142,7 @@ func (s *Server) VerifySignature(sig []byte) (*Service, error) {
 	return service, nil
 }
 
+// Handles the connection from the server.
 func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 	defer conn.Close()
 
@@ -154,8 +159,13 @@ func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 		return
 	}
 
-	// Writer channel.
+	// Writer channel initiation to write messages back to the client.
 	wrCh := make(chan logx.ClientMessage)
+
+	done := make(chan bool)
+	defer func(){
+		done <- true
+	}()
 	go func() {
 		for {
 			select {
@@ -163,6 +173,8 @@ func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 				if err := sendToClient(conn, msg); err != nil {
 					eh(err)
 				}
+			case <-done:
+				return
 			}
 		}
 	}()
@@ -179,26 +191,42 @@ func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 	connDetails.Hash = tlsConn.ConnectionState().PeerCertificates[0].Signature
 
 	service, err := s.VerifySignature(connDetails.Hash)
-	if err != nil {
+	if err != sql.ErrNoRows && err != nil {
 		eh(err)
 		return
 	}
+
+	// Service in the connection details would be
+	// completed if verified. Otherwise, it would
+	// be nil. By being nil, the connection would be
+	// considered unauthorized.
 	connDetails.Service = service
 
 	//Parse message right away.
 	dec := json.NewDecoder(conn)
 	for {
 		var m logx.HostMessage
+
+		//TODO: log all incoming message errors somewhere including the service details
+		// ONLY if the service is available.
 		if err := dec.Decode(&m); err != nil {
 			eh(err)
 			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
-				conn.Write([]byte("Timeout"))
+				sendToClient(conn, logx.ClientMessage{
+					Type: logx.MsgTypeDecode,
+					Status: logx.ClientMessageStatusFailed,
+					Message: []byte("Timeout"),
+				})
 				return
 			}
 			if err == io.EOF {
 				return
 			}
-			conn.Write([]byte("400: Could not decode message. " + err.Error()))
+			sendToClient(conn, logx.ClientMessage{
+				Type: logx.MsgTypeDecode,
+				Status: logx.ClientMessageStatusFailed,
+				Message: []byte("400: Could not decode message. " + err.Error()),
+			})
 			return
 		}
 
@@ -218,7 +246,7 @@ func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 				sendToClient(conn, logx.ClientMessage{
 					Type:    logx.MsgTypeRegister,
 					Status:  logx.ClientMessageStatusFailed,
-					Message: []byte(err.Error()),
+					Message: []byte("Could not register service: " + err.Error()),
 				})
 			} else {
 				connDetails.Service = service
@@ -238,11 +266,12 @@ func (s *Server) handleConn(conn net.Conn, eh func(error)) {
 
 		// At this point, we got a proper log message.
 		// We can hand off the logging.
-		h, ok := s.Handlers[m.Type]
-		if !ok {
-			h = DefaultMessageHandler
+		switch m.Type {
+		case logx.MsgTypeHeartbeat:
+			HeartbeatHandler(s.DB, m, connDetails)
+		default:
+			DefaultMessageHandler(s.DB, m, connDetails)
 		}
-		h(s.DB, m, connDetails)
 	}
 }
 
@@ -274,40 +303,67 @@ func DefaultMessageHandler(db *sqlx.DB, msg logx.HostMessage, conn ConnDetails) 
 	}
 }
 
+func (s *Server) addToSigCache(service *Service, hash []byte) {
+	s.SigCacheMutex.Lock()
+	s.SigCache[string(hash)] = service
+	s.SigCacheMutex.Unlock()
+}
+
+// This function registers the service with the current host.
+// if the service is already registered, it will return the registered service
+// after ensuring that the name of origin / service is updated.
+//
+// if the service hasn't been already registered, it will attempt to register the
+// service.
 func (s *Server) RegisterService(msg logx.HostMessage, conn ConnDetails) (*Service, error) {
 	db := s.DB
 
-	service, err := GetServiceByName(db, msg.Service)
-	if err != nil {
-		return nil, errors.New("Service retrieval error. " + err.Error())
+	// First, check if the service exists by hash!
+	service, err := GetServiceByHash(db, conn.Hash)
+	if err != sql.ErrNoRows && err != nil {
+		return nil, err
 	}
-	if service != nil && service.Id != "" {
-		sig := string(service.SigHash)
-		if sig == "" {
-			service.SigHash = conn.Hash
-			if err := service.UpdateHash(db); err != nil {
-				return nil, errors.New("Service registration error. " + err.Error())
+
+	// If the name / machine doesn't match, we can assume the register is trying
+	// to update the machine or service name. We can do that here.
+	if service != nil {
+		if service.Name != msg.Service || service.Machine != msg.Machine {
+			service.Name = msg.Service
+			service.Machine = msg.Machine
+			if err := dbutil.TxNow(db, service.Update); err != nil {
+				return nil, err
 			}
-			if err := service.UpdateLastSeen(db); err != nil {
-				return nil, errors.New("Service registration error. " + err.Error())
-			}
-		} else if string(service.SigHash) != string(conn.Hash) {
-			return nil, errors.New("Service registration error. Hash does not match.")
 		}
-		s.SigCacheMutex.Lock()
-		s.SigCache[string(conn.Hash)] = service
-		s.SigCacheMutex.Unlock()
+		s.addToSigCache(service, conn.Hash)
 		return service, nil
 	}
 
-	service, err = CreateService(db, msg.Origin, msg.Service, conn.Hash)
-	if err != nil {
-		return nil, errors.New("Could not register service: " + err.Error())
+	// If the service is null, that means we couldn't find it by
+	// hash. We should find it by name instead. Then, we can update the hash.
+	service, err = GetServiceByName(db, msg.Machine, msg.Service)
+	if err != sql.ErrNoRows && err != nil {
+		return nil, err
+	}
+	if service != nil {
+		if err := service.UpdateHash(db); err != nil {
+			return nil, err
+		}
+		s.addToSigCache(service, conn.Hash)
+		return service, nil
 	}
 
-	s.SigCacheMutex.Lock()
-	s.SigCache[string(conn.Hash)] = service
-	s.SigCacheMutex.Unlock()
+	// Otherwise, we don't have this value in the database *at all*. So
+	// we need to insert it.
+	service = &Service{
+		Machine:  msg.Machine,
+		Name:     msg.Service,
+		LastSeen: time.Now(),
+		SigHash:  conn.Hash,
+	}
+	if err := dbutil.TxNow(db, service.Insert); err != nil {
+		return nil, err
+	}
+	s.addToSigCache(service, conn.Hash)
 	return service, nil
 }
 
@@ -319,16 +375,4 @@ func HeartbeatHandler(db *sqlx.DB, msg logx.HostMessage, conn ConnDetails) {
 			Message: []byte("Could not update heartbeat. " + err.Error()),
 		}
 	}
-}
-
-func RouteWriterHandler(db *sqlx.DB, msg logx.HostMessage, conn ConnDetails) {
-	//TODO: handler for MsgTypeRouteWriter
-	// Decode the context
-	// Write to the route.
-}
-
-func RouteLoggerHandler(db *sqlx.DB, msg logx.HostMessage, conn ConnDetails) {
-	//TODO: handler for MsgTypeRouteWriterWithSeverity
-	// Decode the context
-	// Write to the route
 }

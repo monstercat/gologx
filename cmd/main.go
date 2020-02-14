@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	cmd "github.com/tmathews/commander"
 
@@ -34,15 +35,9 @@ func main() {
 	}
 }
 
+// Starts the host logging server.
 func cmdServer(name string, args []string) error {
-	s := &server.Server{
-		Handlers: map[string]server.Handler{
-			//TODO: change to default handlers !
-			logx.MsgTypeHeartbeat:             server.HeartbeatHandler,
-			logx.RouteHostLogType:             server.RouteWriterHandler,
-			logx.RouteHostLogWithSeverityType: server.RouteLoggerHandler,
-		},
-	}
+	s := &server.Server{}
 	var port int
 
 	set := flag.NewFlagSet(name, flag.ExitOnError)
@@ -71,7 +66,36 @@ func cmdServer(name string, args []string) error {
 	return nil
 }
 
-//TODO: generate certs
+// Generates a certificate to be used by the host or the
+// client.
 func cmdGenerate(name string, args []string) error {
+
+	var certFile, keyFile string
+	var validFor int
+
+	set := flag.NewFlagSet(name, flag.ExitOnError)
+	set.StringVar(&certFile, "cert", "", "Certificate")
+	set.StringVar(&keyFile, "key", "", "Key")
+	set.IntVar(&validFor, "valid-for", 60 * 60 * 24 * 365, "Time certificate valid for (in seconds). Normally one year")
+	if err := set.Parse(args); err != nil {
+		return err
+	}
+
+	log.Println("Generating key and certificate")
+	cert, key, err := logx.GenerateCerts(time.Second * time.Duration(validFor))
+	if err != nil {
+		return err
+	}
+
+	log.Println("Storing certificate")
+	if err := logx.WriteCertificate(cert, certFile); err != nil {
+		return err
+	}
+
+	log.Println("Storing private key")
+	if err := logx.WritePrivateKey(key, keyFile); err != nil {
+		return err
+	}
+
 	return nil
 }

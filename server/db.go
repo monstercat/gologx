@@ -9,9 +9,7 @@ import (
 var psql = squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
 
 const (
-	TableOrigin = "origin"
-
-	ViewService = "service_view"
+	TableService = "service"
 )
 
 
