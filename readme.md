@@ -44,13 +44,7 @@ To use in a route, you can create a logger using the `NewRouteLogger` method.
 For example: 
 ```
 http.HandleFunc("/foo", func(w http.ResponseWriter, r *http.Request){
-    customRouteHandler(w, r, NewRouteLogger(r, logHandler))
-})
-
-...
-
-func customRouteHandler(w http.ResponseWriter, r *http.Request, log *log.Logger){
+    log := NewRouteLogger(r, logHandler)
     ...
-    // no changes to the way log is used by default. 
-}
+})
 ```
