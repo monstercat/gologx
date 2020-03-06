@@ -7,7 +7,7 @@ import (
 	"github.com/lib/pq"
 
 	dbutil "github.com/monstercat/golib/db"
-	"github.com/monstercat/logx"
+	"github.com/monstercat/gologx"
 )
 
 func TestRegisterService(t *testing.T) {

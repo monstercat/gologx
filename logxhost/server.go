@@ -16,7 +16,7 @@ import (
 	"github.com/jmoiron/sqlx"
 
 	dbutil "github.com/monstercat/golib/db"
-	"github.com/monstercat/logx"
+	"github.com/monstercat/gologx"
 )
 
 // Host Server which stores the incoming logs in a central database

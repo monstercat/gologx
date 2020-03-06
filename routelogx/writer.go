@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/monstercat/logx"
+	"github.com/monstercat/gologx"
 )
 
 const HostLogType = "RouteHostLog"

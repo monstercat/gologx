@@ -12,8 +12,8 @@ import (
 	"github.com/pkg/errors"
 	cmd "github.com/tmathews/commander"
 
-	"github.com/monstercat/logx"
-	"github.com/monstercat/logx/logxhost"
+	"github.com/monstercat/gologx"
+	"github.com/monstercat/gologx/logxhost"
 )
 
 // Basic command to run the server.

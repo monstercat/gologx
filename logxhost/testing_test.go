@@ -8,7 +8,7 @@ import (
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
 
-	"github.com/monstercat/logx"
+	"github.com/monstercat/gologx"
 )
 
 func getPostgresConnection(url string) (*sqlx.DB, error) {

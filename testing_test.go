@@ -2,13 +2,10 @@ package logx
 
 import (
 	"os"
-	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
 	"github.com/pkg/errors"
-
-	"github.com/monstercat/logx/logxhost"
 )
 
 

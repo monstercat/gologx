@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/monstercat/logx"
+	"github.com/monstercat/gologx"
 )
 
 const HostLogWithSeverityType = "RouteHostLogWithSeverity"
