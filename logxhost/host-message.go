@@ -3,7 +3,7 @@ package logxhost
 import (
 	"github.com/jmoiron/sqlx"
 
-	"github.com/monstercat/logx"
+	"github.com/monstercat/gologx"
 )
 
 func InsertHostMessage(db sqlx.Ext, msg logx.HostMessage, service string ) error {
