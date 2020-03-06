@@ -59,6 +59,7 @@ func cmdServer(name string, args []string) error {
 	set := flag.NewFlagSet(name, flag.ExitOnError)
 	set.StringVar(&s.CertFile, "cert", "", "Certificate")
 	set.StringVar(&s.KeyFile, "key", "", "Key")
+	set.StringVar(&s.Password, "password", "", "Password for clients to use to connect")
 	set.StringVar(&postgres, "postgres", "", "Postgres database")
 	set.IntVar(&port, "port", 9090, "Port")
 	if err := set.Parse(args); err != nil {
