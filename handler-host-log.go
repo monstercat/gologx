@@ -23,7 +23,7 @@ func (l BaseHostLog) HostLog() BaseHostLog {
 	return l
 }
 
-func (l BaseHostLog) SetMessage(byt []byte) {
+func (l *BaseHostLog) SetMessage(byt []byte) {
 	l.Message = byt
 }
 
