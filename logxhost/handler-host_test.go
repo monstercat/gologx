@@ -11,8 +11,8 @@ import (
 
 	"github.com/lib/pq"
 
-	"github.com/monstercat/logx"
-	"github.com/monstercat/logx/routelogx"
+	"github.com/monstercat/gologx"
+	"github.com/monstercat/gologx/routelogx"
 )
 
 func TestHostHandler(t *testing.T) {
@@ -47,7 +47,7 @@ func TestHostHandler(t *testing.T) {
 		{
 			Password: server.Password,
 			TestLogs: []logx.HostLog{
-				routelogx.HostLog{
+				&routelogx.HostLog{
 					Ctx: routelogx.Context{
 						Method: "Test Method",
 						Path:   "/path",

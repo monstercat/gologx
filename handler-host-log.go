@@ -19,8 +19,8 @@ type BaseHostLog struct {
 	context []byte
 }
 
-func (l BaseHostLog) HostLog() BaseHostLog {
-	return l
+func (l *BaseHostLog) HostLog() BaseHostLog {
+	return *l
 }
 
 func (l *BaseHostLog) SetMessage(byt []byte) {

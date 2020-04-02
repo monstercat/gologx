@@ -38,7 +38,7 @@ func (l HostLog) Context() interface{} {
 // This will create a specialized RouteLog which will be
 // sent to the LogContext's handlers.
 func (w *Writer) Write(byt []byte) (int, error) {
-	log := HostLog{
+	log := &HostLog{
 		BaseHostLog: logx.BaseHostLog{
 			Time: time.Now(),
 
