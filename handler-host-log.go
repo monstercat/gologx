@@ -31,3 +31,6 @@ func (l BaseHostLog) Byte() []byte {
 	return l.Message
 }
 
+func (l BaseHostLog) Context() interface{} {
+	return nil
+}
