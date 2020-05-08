@@ -51,7 +51,7 @@ func (w *Logger) log(severity Severity, message []byte) (int, error) {
 		},
 	}
 	log.SetMessage(message)
-	return w.ctx.Run(log)
+	return w.ctx.Run(&log)
 }
 
 func (w *Logger) Write(byt []byte) (int, error) {
