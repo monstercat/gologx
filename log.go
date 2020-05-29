@@ -42,3 +42,9 @@ func (w *StdLogWriter) Write(byt []byte) (int, error) {
 	}
 	return w.ctx.Run(log)
 }
+
+func NewStdLogWriter(ctx *LogHandler) *StdLogWriter {
+	return &StdLogWriter{
+		ctx: ctx,
+	}
+}
