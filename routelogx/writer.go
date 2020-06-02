@@ -65,9 +65,11 @@ func (w *Writer) Write(byt []byte) (int, error) {
 // }
 func NewLogger(r *http.Request, ctx *logx.LogHandler) *log.Logger {
 	var b []byte
-	body, err := r.GetBody()
-	if err == nil {
-		_, _ = body.Read(b)
+	if r.Body != nil && r.GetBody != nil {
+		body, err := r.GetBody()
+		if err == nil {
+			_, _ = body.Read(b)
+		}
 	}
 
 	w := &Writer{
