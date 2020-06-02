@@ -176,13 +176,10 @@ VALUES (?, ?, ?, ?)
 }
 
 func (h *HostHandler) initStopChannels() {
-	h.die = make(chan bool, 5)
+	h.die = make(chan bool)
 }
 
 func (h *HostHandler) Close() {
-	for i := 0; i < 5; i++ {
-		h.die <- true
-	}
 	close(h.die)
 }
 
