@@ -66,15 +66,12 @@ type HostHandler struct {
 	// will attempt to read this directory for any existing files and
 	// send them to the host.
 	CacheFileLocation string
-	db                *sql.DB
+	db *sql.DB
 
 	// List of filenames/Ids that are currently being sent to the server,
 	// so they do not get sent again.
 	currentlySending   []string
 	currentlySendingMu sync.RWMutex
-
-	// Channel to stop processing
-	die           chan bool
 }
 
 // Host Message is messages that are sent to the host.
@@ -175,14 +172,6 @@ VALUES (?, ?, ?, ?)
 	return nil
 }
 
-func (h *HostHandler) initStopChannels() {
-	h.die = make(chan bool)
-}
-
-func (h *HostHandler) Close() {
-	close(h.die)
-}
-
 func (h HostHandler) RunForever(errCh chan error) {
 	if err := h.Startup(); err != nil {
 		errCh <- err
@@ -192,12 +181,6 @@ func (h HostHandler) RunForever(errCh chan error) {
 	currDelay := 5 * time.Millisecond
 	now := time.Now()
 	for {
-		select {
-		case <-h.die:
-			return
-		case <-time.After(100 * time.Millisecond):
-		}
-
 		// Continually restart!
 		h.run(errCh)
 
@@ -207,7 +190,7 @@ func (h HostHandler) RunForever(errCh chan error) {
 			if currDelay > time.Second {
 				currDelay = time.Second
 			}
-		} else {
+		}else{
 			currDelay = 5 * time.Millisecond
 		}
 	}
@@ -246,8 +229,6 @@ func (h HostHandler) run(errCh chan error) {
 	// This for loop actually writes all the responses.
 	for {
 		select {
-		case <-h.die:
-			return
 		case msg := <-wrCh:
 			if err := h.sendToHost(conn, msg); err != nil {
 				errCh <- err
@@ -268,8 +249,6 @@ func (h HostHandler) run(errCh chan error) {
 func (h *HostHandler) SendLogs(wrCh chan HostMessage, errCh chan error) {
 	for {
 		select {
-		case <-h.die:
-			return
 		case <-time.After(h.WaitDuration):
 			h.currentlySendingMu.RLock()
 			sending := h.currentlySending
@@ -310,8 +289,6 @@ func (h *HostHandler) SendLogs(wrCh chan HostMessage, errCh chan error) {
 //
 // Then, it will register itself with the host.
 func (h *HostHandler) Startup() error {
-	h.initStopChannels()
-
 	if h.CertFile == "" || h.KeyFile == "" {
 		return ErrCertRequired
 	}
@@ -356,12 +333,6 @@ func (h *HostHandler) Startup() error {
 func (h HostHandler) ReadResponses(conn *tls.Conn, errCh chan error) {
 	dec := json.NewDecoder(conn)
 	for {
-		select {
-		case <-h.die:
-			return
-		case <-time.After(time.Millisecond):
-		}
-
 		var m ClientMessage
 		if err := dec.Decode(&m); err != nil {
 			if err == io.EOF {
@@ -451,8 +422,6 @@ func (h HostHandler) Register() error {
 func (h *HostHandler) RunHeartbeat(wrCh chan HostMessage) {
 	for {
 		select {
-		case <-h.die:
-			return
 		case <-time.After(h.HeartBeatDuration):
 			wrCh <- HostMessage{
 				Machine: h.Machine,
