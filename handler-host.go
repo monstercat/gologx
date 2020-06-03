@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS log (
     log_type TEXT,
     log_time DATE,
     message TEXT,
+    service TEXT,
     context BLOB
 );
 `)
@@ -166,9 +167,9 @@ func (h *HostHandler) Store(l HostLog) error {
 	}
 
 	_, err = h.db.Exec(`
-INSERT INTO log(log_type, log_time, message, context)
-VALUES (?, ?, ?, ?)
-`, b.Type, b.Time, b.Message, byt)
+INSERT INTO log(log_type, log_time, message, service, context)
+VALUES (?, ?, ?, ?, ?)
+`, b.Type, b.Time, b.Message, h.Service, byt)
 	if err != nil {
 		return err
 	}
@@ -184,6 +185,8 @@ func (h *HostHandler) Close() {
 }
 
 func (h HostHandler) RunForever(errCh chan error) {
+	defer close(errCh)
+
 	if err := h.Startup(); err != nil {
 		errCh <- err
 		return
@@ -220,6 +223,8 @@ func (h HostHandler) RunForever(errCh chan error) {
 // This function will call startup as well, so
 // calling startup is not necessary.
 func (h HostHandler) Run(errCh chan error) {
+	defer close(errCh)
+
 	if err := h.Startup(); err != nil {
 		errCh <- err
 		return
@@ -277,7 +282,7 @@ func (h *HostHandler) SendLogs(wrCh chan HostMessage, errCh chan error) {
 
 			sendingStr := "\"" + strings.Join(sending, "\",\"") + "\""
 
-			rows, err := h.db.Query("SELECT id, log_type, log_time, message, context FROM log WHERE id NOT IN (?)", sendingStr)
+			rows, err := h.db.Query("SELECT id, log_type, log_time, message, context FROM log WHERE id NOT IN (?) AND service = ?", sendingStr, h.Service)
 			if err != nil {
 				errCh <- err
 				continue
