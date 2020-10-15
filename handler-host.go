@@ -74,7 +74,7 @@ type HostHandler struct {
 	currentlySendingMu sync.RWMutex
 
 	// Channel to stop processing
-	die           chan bool
+	die chan bool
 }
 
 // Host Message is messages that are sent to the host.
@@ -107,7 +107,7 @@ const (
 
 // Handle handles incoming logs by storing them
 // in files in CacheFileLocation.
-func (h HostHandler) Handle(l Log) (int, error) {
+func (h *HostHandler) Handle(l Log) (int, error) {
 	hostLog, ok := l.(HostLog)
 	if !ok {
 		return 0, nil
@@ -184,13 +184,14 @@ func (h *HostHandler) Close() {
 	close(h.die)
 }
 
-func (h HostHandler) RunForever(errCh chan error) {
+func (h *HostHandler) RunForever(errCh chan error) {
 	defer close(errCh)
 
 	if err := h.Startup(); err != nil {
 		errCh <- err
 		return
 	}
+	defer h.db.Close()
 
 	currDelay := 5 * time.Millisecond
 	now := time.Now()
@@ -222,18 +223,19 @@ func (h HostHandler) RunForever(errCh chan error) {
 //
 // This function will call startup as well, so
 // calling startup is not necessary.
-func (h HostHandler) Run(errCh chan error) {
+func (h *HostHandler) Run(errCh chan error) {
 	defer close(errCh)
 
 	if err := h.Startup(); err != nil {
 		errCh <- err
 		return
 	}
+	defer h.db.Close()
 
 	h.run(errCh)
 }
 
-func (h HostHandler) run(errCh chan error) {
+func (h *HostHandler) run(errCh chan error) {
 
 	conn, err := h.connect()
 	if err != nil {
@@ -358,7 +360,7 @@ func (h *HostHandler) Startup() error {
 // This function continually reads responses from the server and decodes it. If there
 // are any errors, it will send the errors back through the error channel.
 // Otherwise, it will process the messages appropriately.
-func (h HostHandler) ReadResponses(conn *tls.Conn, errCh chan error) {
+func (h *HostHandler) ReadResponses(conn *tls.Conn, errCh chan error) {
 	dec := json.NewDecoder(conn)
 	for {
 		select {
@@ -398,7 +400,7 @@ func (h HostHandler) ReadResponses(conn *tls.Conn, errCh chan error) {
 	}
 }
 
-func (h HostHandler) Remove(id string) error {
+func (h *HostHandler) Remove(id string) error {
 	_, err := h.db.Exec(`
 DELETE FROM log WHERE id = ? 
 `, id)
@@ -417,7 +419,7 @@ DELETE FROM log WHERE id = ?
 // This allows for public key encryption for most of the log messages
 // which ensures that services with the password cannot easily
 // mimic another service/origin.
-func (h HostHandler) Register() error {
+func (h *HostHandler) Register() error {
 	conn, err := h.connect()
 	if err != nil {
 		return err
@@ -468,7 +470,7 @@ func (h *HostHandler) RunHeartbeat(wrCh chan HostMessage) {
 	}
 }
 
-func (h HostHandler) connect() (*tls.Conn, error) {
+func (h *HostHandler) connect() (*tls.Conn, error) {
 	conn, err := tls.Dial("tcp", h.Endpoint, &tls.Config{
 		Certificates:       []tls.Certificate{h.pair},
 		InsecureSkipVerify: true,
@@ -479,7 +481,7 @@ func (h HostHandler) connect() (*tls.Conn, error) {
 	return conn, nil
 }
 
-func (h HostHandler) sendToHost(conn *tls.Conn, msg HostMessage) error {
+func (h *HostHandler) sendToHost(conn *tls.Conn, msg HostMessage) error {
 	byt, err := json.Marshal(msg)
 	if err != nil {
 		return err
