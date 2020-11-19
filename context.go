@@ -60,3 +60,11 @@ func (c *LogHandler) Run(l Log) (n int, e error) {
 	}
 	return n, errs.Return()
 }
+
+func (c *LogHandler) Add(h Handler) *LogHandler {
+	if c.Handlers == nil {
+		c.Handlers = make([]Handler, 0, 10)
+	}
+	c.Handlers = append(c.Handlers, h)
+	return c
+}
