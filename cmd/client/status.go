@@ -5,7 +5,6 @@ import (
 )
 
 func showStatus(name string, args []string) error {
-	fmt.Printf("%s", txtDanger("Should show status"))
-
+	fmt.Printf("%s", TxtDanger("Should show status"))
 	return nil
 }

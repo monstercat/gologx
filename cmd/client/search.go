@@ -5,7 +5,7 @@ import (
 )
 
 func showSearch(name string, args []string) error {
-	fmt.Printf("%s", txtDanger("Should show search"))
+	fmt.Printf("%s", TxtDanger("Should show search"))
 
 	return nil
 }

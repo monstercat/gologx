@@ -1,31 +1,34 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"time"
+	"log"
 
-	sq "github.com/Masterminds/squirrel"
-	dbUtil "github.com/monstercat/golib/db"
+	"github.com/monstercat/gologx/logxhost"
 )
 
-type service struct {
-	machine   string
-	name      string
-	last_seen time.Time
-}
-
 func showServices(name string, args []string) error {
-
-	fmt.Printf("%s", txtDanger("Should Show Services"))
-
-	qry := sq.Select("machine", "name", "last_seen").From("services").OrderBy("machine DESC")
-	db, _ := getPostgres()
-
-	var services []*service
-
-	if err := dbUtil.Select(db, services, qry); err != nil {
-		panic(err)
+	var postgres string
+	set := flag.NewFlagSet(name, flag.ExitOnError)
+	set.StringVar(&postgres, "postgres", "", "Postgres database")
+	if err := set.Parse(args); err != nil {
+		return err
 	}
+
+	db, err := getPostgresConnection(postgres)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("%s", TxtDanger("Should Show Services"))
+
+	services, err := logxhost.SelectServices(db)
+	if err != nil {
+		return err
+	}
+
+	log.Print(services)
 
 	return nil
 }
