@@ -75,3 +75,11 @@ func GetServiceByHash(db sqlx.Queryer, hash []byte) (*Service, error) {
 func GetServiceByName(db sqlx.Queryer, machine, name string) (*Service, error) {
 	return GetService(db, squirrel.Eq{"name": name, "machine": machine})
 }
+
+func SelectServices(db sqlx.Queryer) ([]*Service, error) {
+	var xs []*Service
+	if err := dbutil.Select(db, &xs, psql.Select(ColsService...).From(TableService)); err != nil {
+		return nil, err
+	}
+	return xs, nil
+}

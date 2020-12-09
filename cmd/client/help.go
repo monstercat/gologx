@@ -34,12 +34,9 @@ var commands = []command{
 }
 
 func showHelp(name string, args []string) error {
-
-	fmt.Printf("%s\n", txtHighlight("List of commands:"))
-
+	fmt.Printf("%s\n", TxtHighlight("List of commands:"))
 	for _, cmd := range commands {
-		fmt.Printf(">> %s\n   %s: %s\n   %s\n\n", txtHighlight(cmd.title), txtWhiteBold("Usage"), txtWhite(cmd.usage), txtWhite(cmd.description))
+		fmt.Printf(">> %s\n   %s: %s\n   %s\n\n", TxtHighlight(cmd.title), TxtWhiteBold("Usage"), TxtWhite(cmd.usage), TxtWhite(cmd.description))
 	}
-
 	return nil
 }

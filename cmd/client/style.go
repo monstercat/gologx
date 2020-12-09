@@ -5,10 +5,10 @@ import (
 )
 
 var (
-	txtSuccess   = color.FgGreen.Render
-	txtDanger    = color.FgRed.Render
-	txtWarning   = color.FgYellow.Render
-	txtHighlight = color.New(color.FgMagenta, color.OpBold).Render
-	txtWhite     = color.FgWhite.Render
-	txtWhiteBold = color.New(color.FgWhite, color.OpBold).Render
+	TxtSuccess   = color.FgGreen.Render
+	TxtDanger    = color.FgRed.Render
+	TxtWarning   = color.FgYellow.Render
+	TxtHighlight = color.New(color.FgMagenta, color.OpBold).Render
+	TxtWhite     = color.FgWhite.Render
+	TxtWhiteBold = color.New(color.FgWhite, color.OpBold).Render
 )
