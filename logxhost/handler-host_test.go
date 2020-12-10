@@ -1,10 +1,8 @@
 package logxhost
 
 import (
-	"database/sql"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -114,11 +112,6 @@ func TestHostHandler(t *testing.T) {
 		// Client needs to run.
 		go client.Run(errCh)
 
-		clientDb, err := sql.Open("sqlite3", client.CacheFileLocation)
-		if err != nil {
-			t.Fatalf("Could not open db: %s", err)
-		}
-
 		// Send the log!
 		for j, l := range test.TestLogs {
 			_, err := client.Handle(l)
@@ -126,18 +119,17 @@ func TestHostHandler(t *testing.T) {
 				t.Errorf("Could not handle log idx %d for client %d. %s", j, idx, err)
 				continue
 			}
+		}
 
-			var msg string
-			if err := clientDb.QueryRow(`SELECT message FROM log WHERE id = ?`, strconv.Itoa(j+1)).
-				Scan(&msg);
-				err != nil {
-				t.Errorf("Could not get message from new log [%d; %d] %s", idx, j, err)
-				continue
-			}
-
-			if msg != string(l.HostLog().Message) {
-				t.Errorf("Messages not as expected [%d; %d] Got %s instaed of %s", idx, j, msg, l.HostLog().Message)
-			}
+		localLogs, err := client.GetLocalLogs()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(localLogs) != 1 {
+			t.Error("Expecting only one local log before sending")
+		}
+		if string(localLogs[0].Message) != "Test message" {
+			t.Fatalf("Message expected to be 'Test Message'. Got %s", localLogs[0].Message)
 		}
 
 		time.Sleep(time.Second)
@@ -146,7 +138,6 @@ func TestHostHandler(t *testing.T) {
 		service, err := GetServiceByName(server.DB, client.Machine, client.Service)
 		if err != nil {
 			t.Errorf("Could not get service for %d! %s", idx, err)
-			clientDb.Close()
 			continue
 		}
 		serviceIds = append(serviceIds, service.Id)
@@ -159,7 +150,6 @@ func TestHostHandler(t *testing.T) {
 		service, err = GetServiceByName(server.DB, client.Machine, client.Service)
 		if err != nil {
 			t.Errorf("Could not get service after two seconds for %d! %s", idx, err)
-			clientDb.Close()
 			continue
 		}
 		if lastSeen.Equal(service.LastSeen) {
@@ -167,15 +157,13 @@ func TestHostHandler(t *testing.T) {
 		}
 
 		// Logs should have all gone through by now. Length of log in db should be 0.
-		var total int
-		if err := clientDb.QueryRow(`SELECT COUNT(*) FROM log`).Scan(&total); err != nil {
-			t.Errorf("Could not get log total: %s", err)
+		localLogs, err = client.GetLocalLogs()
+		if err != nil {
+			t.Fatal(err)
 		}
-		if total != 0 {
-			t.Errorf("For %d, logs didn't seem to send!", total)
+		if len(localLogs) != 0 {
+			t.Errorf("For %d, logs didn't seem to send!", len(localLogs))
 		}
-
-		clientDb.Close()
 
 		// Wait for server to work.
 		time.Sleep(time.Second)
