@@ -2,16 +2,17 @@ package logx
 
 import (
 	"crypto/tls"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"time"
 
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/etcd-io/bbolt"
+	uuid "github.com/nu7hatch/gouuid"
+
+	stringutil "github.com/monstercat/golib/string"
 )
 
 const (
@@ -22,6 +23,8 @@ const (
 )
 
 var (
+	BucketName = []byte("logx")
+
 	ErrCertRequired = errors.New("certificate required")
 )
 
@@ -66,7 +69,7 @@ type HostHandler struct {
 	// will attempt to read this directory for any existing files and
 	// send them to the host.
 	CacheFileLocation string
-	db                *sql.DB
+	db                *bbolt.DB
 
 	// List of filenames/Ids that are currently being sent to the server,
 	// so they do not get sent again.
@@ -117,63 +120,71 @@ func (h *HostHandler) Handle(l Log) (int, error) {
 		return 0, err
 	}
 
-	byt, err := json.Marshal(hostLog.Context())
+	byt, err := json.Marshal(hostLog)
 	if err != nil {
 		return 0, err
 	}
-	b := hostLog.HostLog()
-	b.context = byt
-
-	return len(b.context), nil
+	return len(byt), nil
 }
 
 func (h *HostHandler) StartDb() (err error) {
 	if h.db != nil {
 		return nil
 	}
-	h.db, err = sql.Open("sqlite3", h.CacheFileLocation)
-	if err != nil {
-		return
-	}
+	h.db, err = bbolt.Open(h.CacheFileLocation, 0666, nil)
+	return
+}
 
-	// Create the table, if it hasn't been created already.
-	_, err = h.db.Exec(`
-CREATE TABLE IF NOT EXISTS log (
-    id INTEGER PRIMARY KEY,
-    log_type TEXT,
-    log_time DATE,
-    message TEXT,
-    service TEXT,
-    context BLOB
-);
-`)
-	if err != nil {
+func (h *HostHandler) createBucketIfNotExists(tx *bbolt.Tx) (b *bbolt.Bucket, err error) {
+	b = tx.Bucket(BucketName)
+	if b != nil {
 		return
 	}
-	return nil
+	return tx.CreateBucket(BucketName)
+}
+
+type storedHostLog struct{
+	BaseHostLog
+	Id      string
+	Context []byte
 }
 
 func (h *HostHandler) Store(l HostLog) error {
 	b := l.HostLog()
 	c := l.Context()
 
-	byt, err := json.Marshal(c)
+	var B storedHostLog
+	B.BaseHostLog = b
+
+	ctx, err := json.Marshal(c)
 	if err != nil {
 		return err
 	}
+	B.Context = ctx
+
 
 	if err := h.StartDb(); err != nil {
 		return err
 	}
 
-	_, err = h.db.Exec(`
-INSERT INTO log(log_type, log_time, message, service, context)
-VALUES (?, ?, ?, ?, ?)
-`, b.Type, b.Time, b.Message, h.Service, byt)
-	if err != nil {
-		return err
-	}
-	return nil
+	// Insert
+	return h.db.Update(func(tx *bbolt.Tx) error {
+		bucket, err := h.createBucketIfNotExists(tx)
+		if err != nil {
+			return err
+		}
+		id, err := uuid.NewV4()
+		if err != nil {
+			return err
+		}
+		B.Id = id.String()
+
+		byt, err := json.Marshal(B)
+		if err != nil {
+			return err
+		}
+		return bucket.Put([]byte(B.Id), byt)
+	})
 }
 
 func (h *HostHandler) initStopChannels() {
@@ -282,30 +293,36 @@ func (h *HostHandler) SendLogs(wrCh chan HostMessage, errCh chan error) {
 			sending := h.currentlySending
 			h.currentlySendingMu.RUnlock()
 
-			sendingStr := "\"" + strings.Join(sending, "\",\"") + "\""
+			err := h.db.View(func(tx *bbolt.Tx) error {
+				bucket := tx.Bucket(BucketName)
+				if bucket == nil {
+					return nil
+				}
+				return bucket.ForEach(func(k, v []byte) error {
+					var l storedHostLog
+					if err := json.Unmarshal(v, &l); err != nil {
+						return err
+					}
+					if stringutil.StringInList(sending, l.Id) {
+						return nil
+					}
 
-			rows, err := h.db.Query("SELECT id, log_type, log_time, message, context FROM log WHERE id NOT IN (?) AND service = ?", sendingStr, h.Service)
+					h.currentlySendingMu.Lock()
+					h.currentlySending = append(h.currentlySending, l.Id)
+					h.currentlySendingMu.Unlock()
+
+					wrCh <- HostMessage{
+						Id:      l.Id,
+						Type:    l.Type,
+						Time:    l.Time,
+						Message: l.Message,
+						Context: l.Context,
+					}
+					return nil
+				})
+			})
 			if err != nil {
 				errCh <- err
-				continue
-			}
-			for rows.Next() {
-				var l BaseHostLog
-				if err := rows.Scan(&l.id, &l.Type, &l.Time, &l.Message, &l.context); err != nil {
-					errCh <- err
-					continue
-				}
-				h.currentlySendingMu.Lock()
-				h.currentlySending = append(h.currentlySending, l.id)
-				h.currentlySendingMu.Unlock()
-
-				wrCh <- HostMessage{
-					Id:      l.id,
-					Type:    l.Type,
-					Time:    l.Time,
-					Message: l.Message,
-					Context: l.context,
-				}
 			}
 		}
 	}
@@ -401,10 +418,32 @@ func (h *HostHandler) ReadResponses(conn *tls.Conn, errCh chan error) {
 }
 
 func (h *HostHandler) Remove(id string) error {
-	_, err := h.db.Exec(`
-DELETE FROM log WHERE id = ? 
-`, id)
-	return err
+	return h.db.Update(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(BucketName)
+		if b == nil {
+			return nil
+		}
+		return b.Delete([]byte(id))
+	})
+}
+
+func (h *HostHandler) GetLocalLogs() (arr []*BaseHostLog, err error) {
+	arr = make([]*BaseHostLog, 0, 10)
+	err = h.db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket(BucketName)
+		if b == nil {
+			return nil
+		}
+		return b.ForEach(func(k, v []byte) error {
+			var l BaseHostLog
+			if err := json.Unmarshal(v, &l); err != nil {
+				return err
+			}
+			arr = append(arr, &l)
+			return nil
+		})
+	})
+	return
 }
 
 // Registration with the host involves sending the origin and the
