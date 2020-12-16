@@ -5,7 +5,7 @@ import (
 
 	"github.com/Masterminds/squirrel"
 	"github.com/jmoiron/sqlx"
-
+	"github.com/lib/pq"
 	dbutil "github.com/monstercat/golib/db"
 )
 
@@ -76,9 +76,15 @@ func GetServiceByName(db sqlx.Queryer, machine, name string) (*Service, error) {
 	return GetService(db, squirrel.Eq{"name": name, "machine": machine})
 }
 
-func SelectServices(db sqlx.Queryer) ([]*Service, error) {
+func SelectServices(db sqlx.Queryer, names []string) ([]*Service, error) {
 	var xs []*Service
-	if err := dbutil.Select(db, &xs, psql.Select(ColsService...).From(TableService)); err != nil {
+	var qry = psql.Select(ColsService...).From(TableService)
+
+	if len(names) > 0 {
+		qry = psql.Select(ColsService...).From(TableService).Where("name LIKE ANY(?)", pq.StringArray(names))
+	}
+
+	if err := dbutil.Select(db, &xs, qry); err != nil {
 		return nil, err
 	}
 	return xs, nil
