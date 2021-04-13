@@ -192,6 +192,9 @@ func (h *HostHandler) initStopChannels() {
 }
 
 func (h *HostHandler) Close() {
+	if h.db != nil {
+		h.db.Close()
+	}
 	close(h.die)
 }
 
