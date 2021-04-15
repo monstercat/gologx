@@ -25,7 +25,9 @@ const (
 var (
 	BucketName = []byte("logx")
 
-	ErrCertRequired = errors.New("certificate required")
+	ErrAlreadyInitialized = errors.New("host handler already started")
+	ErrCertRequired       = errors.New("certificate required")
+	ErrUninitialized      = errors.New("attempting to save logs when the lcoal database is not initialized")
 )
 
 // Host Handler will communicate with the server
@@ -75,6 +77,10 @@ type HostHandler struct {
 	// so they do not get sent again.
 	currentlySending   []string
 	currentlySendingMu sync.RWMutex
+
+	// startup
+	started   bool
+	startedMu sync.RWMutex
 
 	// Channel to stop processing
 	die chan bool
@@ -127,14 +133,6 @@ func (h *HostHandler) Handle(l Log) (int, error) {
 	return len(byt), nil
 }
 
-func (h *HostHandler) StartDb() (err error) {
-	if h.db != nil {
-		return nil
-	}
-	h.db, err = bbolt.Open(h.CacheFileLocation, 0666, nil)
-	return
-}
-
 func (h *HostHandler) createBucketIfNotExists(tx *bbolt.Tx) (b *bbolt.Bucket, err error) {
 	b = tx.Bucket(BucketName)
 	if b != nil {
@@ -143,13 +141,25 @@ func (h *HostHandler) createBucketIfNotExists(tx *bbolt.Tx) (b *bbolt.Bucket, er
 	return tx.CreateBucket(BucketName)
 }
 
-type storedHostLog struct{
+type storedHostLog struct {
 	BaseHostLog
 	Id      string
 	Context []byte
 }
 
+func (h *HostHandler) Started() bool {
+	h.startedMu.RLock()
+	defer h.startedMu.RUnlock()
+	return h.started
+}
+
 func (h *HostHandler) Store(l HostLog) error {
+	// NOTE: We used to call StartDb here to ensure that the database is opened. Instead, we are leaving it closed and
+	// returning an error. The database should be started through the Run command.
+	if !h.Started() || h.db == nil {
+		return ErrUninitialized
+	}
+
 	b := l.HostLog()
 	c := l.Context()
 
@@ -161,11 +171,6 @@ func (h *HostHandler) Store(l HostLog) error {
 		return err
 	}
 	B.Context = ctx
-
-
-	if err := h.StartDb(); err != nil {
-		return err
-	}
 
 	// Insert
 	return h.db.Update(func(tx *bbolt.Tx) error {
@@ -337,6 +342,10 @@ func (h *HostHandler) SendLogs(wrCh chan HostMessage, errCh chan error) {
 //
 // Then, it will register itself with the host.
 func (h *HostHandler) Startup() error {
+	if h.Started() {
+		return ErrAlreadyInitialized
+	}
+
 	h.initStopChannels()
 
 	if h.CertFile == "" || h.KeyFile == "" {
@@ -369,8 +378,17 @@ func (h *HostHandler) Startup() error {
 		}
 	}
 
+	h.startedMu.Lock()
+	h.started = true
+	h.startedMu.Unlock()
+
 	// Before registration, start the sql lite database.
-	if err := h.StartDb(); err != nil {
+	h.db, err = bbolt.Open(h.CacheFileLocation, 0666, nil)
+	if err != nil {
+		h.startedMu.Lock()
+		h.started = false
+		h.startedMu.Unlock()
+
 		return err
 	}
 
