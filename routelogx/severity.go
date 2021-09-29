@@ -4,12 +4,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/monstercat/gologx"
 )
-
-const HostLogWithSeverityType = "RouteHostLogWithSeverity"
 
 type Severity string
 
@@ -28,23 +25,17 @@ type ContextWithSeverity struct {
 	Severity Severity
 }
 
-type HostLogWithSeverity struct {
-	logx.BaseHostLog
+type LogWithSeverity struct {
+	logx.StdLog
 	ContextWithSeverity
 }
 
-func (l HostLogWithSeverity) Context() interface{} {
+func (l LogWithSeverity) Context() interface{} {
 	return l.ContextWithSeverity
 }
 
 func (w *Logger) log(severity Severity, message []byte) (int, error) {
-	log := HostLogWithSeverity{
-		BaseHostLog: logx.BaseHostLog{
-			Time: time.Now(),
-
-			// Used for storing data in special tables in the backend.
-			Type: HostLogWithSeverityType,
-		},
+	log := LogWithSeverity{
 		ContextWithSeverity: ContextWithSeverity{
 			Context:  w.Context,
 			Severity: severity,

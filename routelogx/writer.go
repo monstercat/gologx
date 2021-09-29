@@ -3,12 +3,9 @@ package routelogx
 import (
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/monstercat/gologx"
 )
-
-const HostLogType = "RouteHostLog"
 
 type Writer struct {
 	ctx *logx.LogHandler
@@ -24,8 +21,8 @@ type Context struct {
 }
 
 type HostLog struct {
+	logx.StdLog
 	Ctx Context
-	logx.BaseHostLog
 }
 
 func (l HostLog) Context() interface{} {
@@ -39,12 +36,6 @@ func (l HostLog) Context() interface{} {
 // sent to the LogContext's handlers.
 func (w *Writer) Write(byt []byte) (int, error) {
 	log := &HostLog{
-		BaseHostLog: logx.BaseHostLog{
-			Time: time.Now(),
-
-			// Used for storing data in special tables in the backend.
-			Type: HostLogType,
-		},
 		Ctx: w.Context,
 	}
 	log.SetMessage(byt)
